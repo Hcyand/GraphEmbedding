@@ -120,8 +120,9 @@ class RandomWalker:
 
         G = self.G
 
-        nodes = list(G.nodes())
+        nodes = list(G.nodes()) # 节点
 
+        # Parallel函数是并行执行多个函数，每个函数都是立即执行
         results = Parallel(n_jobs=workers, verbose=verbose, )(
             delayed(self._simulate_walks)(nodes, num, walk_length) for num in
             partition_num(num_walks, workers))

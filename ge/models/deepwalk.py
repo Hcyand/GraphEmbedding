@@ -25,7 +25,7 @@ import pandas as pd
 class DeepWalk:
     def __init__(self, graph, walk_length, num_walks, workers=1):
 
-        self.graph = graph
+        self.graph = graph  # 有向图数据
         self.w2v_model = None
         self._embeddings = {}
 

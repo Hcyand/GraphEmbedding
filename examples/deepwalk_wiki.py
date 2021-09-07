@@ -1,16 +1,14 @@
-
-import numpy as np
-
-from ge.classify import read_node_label, Classifier
-from ge import DeepWalk
-from sklearn.linear_model import LogisticRegression
-
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
+from sklearn.linear_model import LogisticRegression
 from sklearn.manifold import TSNE
 
+from ge import DeepWalk
+from ge.classify import read_node_label, Classifier
 
-def evaluate_embeddings(embeddings):
+
+def evaluate_embeddings(embeddings):  # 验证embedding效果
     X, Y = read_node_label('../data/wiki/wiki_labels.txt')
     tr_frac = 0.8
     print("Training classifier using {:.2f}% nodes...".format(
@@ -19,9 +17,8 @@ def evaluate_embeddings(embeddings):
     clf.split_train_evaluate(X, Y, tr_frac)
 
 
-def plot_embeddings(embeddings,):
+def plot_embeddings(embeddings):  # 绘制embedding分布图
     X, Y = read_node_label('../data/wiki/wiki_labels.txt')
-
     emb_list = []
     for k in X:
         emb_list.append(embeddings[k])
@@ -42,6 +39,8 @@ def plot_embeddings(embeddings,):
 
 
 if __name__ == "__main__":
+    # read_edgelist从txt文件中读取有向图函数
+    # 需要了解有向图数据如何存储
     G = nx.read_edgelist('../data/wiki/Wiki_edgelist.txt',
                          create_using=nx.DiGraph(), nodetype=None, data=[('weight', int)])
 
