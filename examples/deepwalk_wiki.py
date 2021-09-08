@@ -39,8 +39,10 @@ def plot_embeddings(embeddings):  # 绘制embedding分布图
 
 
 if __name__ == "__main__":
-    # read_edgelist从txt文件中读取有向图函数
-    # 需要了解有向图数据如何存储
+    # read_edgelist从txt文件中读取有向图函数，从边列表中读取图形
+    # create_using要创建的图表类型，DiGraph有向图
+    # nodetype节点类型
+    # data为边缘数据制定字典键名和类型
     G = nx.read_edgelist('../data/wiki/Wiki_edgelist.txt',
                          create_using=nx.DiGraph(), nodetype=None, data=[('weight', int)])
 

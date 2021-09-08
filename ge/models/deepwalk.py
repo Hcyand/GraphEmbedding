@@ -17,33 +17,33 @@ Reference:
 
 
 """
-from ..walker import RandomWalker
 from gensim.models import Word2Vec
-import pandas as pd
+
+from ..walker import RandomWalker
 
 
 class DeepWalk:
     def __init__(self, graph, walk_length, num_walks, workers=1):
 
         self.graph = graph  # 有向图数据
-        self.w2v_model = None
-        self._embeddings = {}
+        self.w2v_model = None  # word2vec模型
+        self._embeddings = {}  # w2v结果
 
         self.walker = RandomWalker(
             graph, p=1, q=1, )
         self.sentences = self.walker.simulate_walks(
-            num_walks=num_walks, walk_length=walk_length, workers=workers, verbose=1)
+            num_walks=num_walks, walk_length=walk_length, workers=workers, verbose=1)  # 返回deepwalk后结果
 
     def train(self, embed_size=128, window_size=5, workers=3, iter=5, **kwargs):
 
-        kwargs["sentences"] = self.sentences
-        kwargs["min_count"] = kwargs.get("min_count", 0)
-        kwargs["size"] = embed_size
-        kwargs["sg"] = 1  # skip gram
-        kwargs["hs"] = 1  # deepwalk use Hierarchical Softmax
-        kwargs["workers"] = workers
-        kwargs["window"] = window_size
-        kwargs["iter"] = iter
+        kwargs["sentences"] = self.sentences  # list
+        kwargs["min_count"] = kwargs.get("min_count", 0)  # 词频小于min_count的词会被丢弃
+        kwargs["size"] = embed_size  # 特征向量维度
+        kwargs["sg"] = 1  # 0为CBOW算法，1为skip-gram算法
+        kwargs["hs"] = 1  # 1则会采用hierarchica·softmax技巧，0（default）则negative sampling会被使用
+        kwargs["workers"] = workers  # 控制训练的并行数
+        kwargs["window"] = window_size  # 当前词与预测词在一个句子中最大的距离
+        kwargs["iter"] = iter  # 迭代次数
 
         print("Learning embedding vectors...")
         model = Word2Vec(**kwargs)
@@ -52,13 +52,13 @@ class DeepWalk:
         self.w2v_model = model
         return model
 
-    def get_embeddings(self,):
+    def get_embeddings(self, ):
         if self.w2v_model is None:
             print("model not train")
             return {}
 
         self._embeddings = {}
         for word in self.graph.nodes():
-            self._embeddings[word] = self.w2v_model.wv[word]
+            self._embeddings[word] = self.w2v_model.wv[word]  # 读取出向量
 
         return self._embeddings

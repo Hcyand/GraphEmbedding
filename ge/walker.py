@@ -2,10 +2,8 @@ import itertools
 import math
 import random
 
-import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
-from tqdm import trange
 
 from .alias import alias_sample, create_alias_table
 from .utils import partition_num
@@ -22,7 +20,7 @@ class RandomWalker:
         self.G = G
         self.p = p
         self.q = q
-        self.use_rejection_sampling = use_rejection_sampling
+        self.use_rejection_sampling = use_rejection_sampling  # node2vec应用
 
     def deepwalk_walk(self, walk_length, start_node):
 
@@ -30,14 +28,20 @@ class RandomWalker:
 
         while len(walk) < walk_length:
             cur = walk[-1]
-            cur_nbrs = list(self.G.neighbors(cur))
+            cur_nbrs = list(self.G.neighbors(cur))  # cur节点的邻居节点
             if len(cur_nbrs) > 0:
-                walk.append(random.choice(cur_nbrs))
+                walk.append(random.choice(cur_nbrs))  # walk加入邻居节点
             else:
                 break
         return walk
 
     def node2vec_walk(self, walk_length, start_node):
+        """
+        较大网络结构时不能使用，因为动态有偏随机游走需要对每条有向边构建一个Alias Table
+        当网络节点上亿，每个邻居节点成百上千时，预计算的Alias Table成本巨大
+        而且大多数计算的Alias Table是无用的
+        所以以下方法可以适用于网络结构不大时考虑
+        """
 
         G = self.G
         alias_nodes = self.alias_nodes
@@ -67,15 +71,17 @@ class RandomWalker:
         """
         Reference:
         KnightKing: A Fast Distributed Graph Random Walk Engine
+        快速分布式图随机游走引擎
         http://madsys.cs.tsinghua.edu.cn/publications/SOSP19-yang.pdf
         """
 
         def rejection_sample(inv_p, inv_q, nbrs_num):
+            # 计算转移状态的最大值和最小值
             upper_bound = max(1.0, max(inv_p, inv_q))
             lower_bound = min(1.0, min(inv_p, inv_q))
             shatter = 0
             second_upper_bound = max(1.0, inv_q)
-            if (inv_p > second_upper_bound):
+            if inv_p > second_upper_bound:
                 shatter = second_upper_bound / nbrs_num
                 upper_bound = second_upper_bound + shatter
             return upper_bound, lower_bound, shatter
@@ -99,17 +105,17 @@ class RandomWalker:
                     prev_nbrs = set(G.neighbors(prev))
                     while True:
                         prob = random.random() * upper_bound
-                        if (prob + shatter >= upper_bound):
-                            next_node = prev
+                        if prob + shatter >= upper_bound:
+                            next_node = prev  # 返回距离为0和1的node
                             break
                         next_node = cur_nbrs[alias_sample(
-                            alias_nodes[cur][0], alias_nodes[cur][1])]
-                        if (prob < lower_bound):
+                            alias_nodes[cur][0], alias_nodes[cur][1])]  # 计算next_node为距离为2的node
+                        if prob < lower_bound:
+                            break  # 当采样概率低于min时，不论当前采样节点和上一级节点关系如何，都可以直接接受该节点
+                        if prob < inv_p and next_node == prev:  # 考虑无向图？
                             break
-                        if (prob < inv_p and next_node == prev):
-                            break
-                        _prob = 1.0 if next_node in prev_nbrs else inv_q
-                        if (prob < _prob):
+                        _prob = 1.0 if next_node in prev_nbrs else inv_q  # 考虑无向图？
+                        if prob < _prob:
                             break
                     walk.append(next_node)
             else:
@@ -120,7 +126,7 @@ class RandomWalker:
 
         G = self.G
 
-        nodes = list(G.nodes()) # 节点
+        nodes = list(G.nodes())  # 节点
 
         # Parallel函数是并行执行多个函数，每个函数都是立即执行
         results = Parallel(n_jobs=workers, verbose=verbose, )(
@@ -131,14 +137,14 @@ class RandomWalker:
 
         return walks
 
-    def _simulate_walks(self, nodes, num_walks, walk_length,):
+    def _simulate_walks(self, nodes, num_walks, walk_length, ):
         walks = []
         for _ in range(num_walks):
-            random.shuffle(nodes)
+            random.shuffle(nodes)  # 随机打乱节点
             for v in nodes:
-                if self.p == 1 and self.q == 1:
+                if self.p == 1 and self.q == 1:  # p和q为1时为DeepWalk，p和q为边权重的计算数之一
                     walks.append(self.deepwalk_walk(
-                        walk_length=walk_length, start_node=v))
+                        walk_length=walk_length, start_node=v))  # 步长和开始节点
                 elif self.use_rejection_sampling:
                     walks.append(self.node2vec_walk2(
                         walk_length=walk_length, start_node=v))
@@ -160,22 +166,23 @@ class RandomWalker:
 
         unnormalized_probs = []
         for x in G.neighbors(v):
-            weight = G[v][x].get('weight', 1.0)  # w_vx
+            weight = G[v][x].get('weight', 1.0)  # w_vx 边的权重都为1
             if x == t:  # d_tx == 0
-                unnormalized_probs.append(weight/p)
+                unnormalized_probs.append(weight / p)
             elif G.has_edge(x, t):  # d_tx == 1
                 unnormalized_probs.append(weight)
             else:  # d_tx > 1
-                unnormalized_probs.append(weight/q)
+                unnormalized_probs.append(weight / q)
         norm_const = sum(unnormalized_probs)
         normalized_probs = [
-            float(u_prob)/norm_const for u_prob in unnormalized_probs]
+            float(u_prob) / norm_const for u_prob in unnormalized_probs]
 
         return create_alias_table(normalized_probs)
 
     def preprocess_transition_probs(self):
         """
         Preprocessing of transition probabilities for guiding the random walks.
+        用于引导随机游走的转移概率的预处理
         """
         G = self.G
         alias_nodes = {}
@@ -184,15 +191,15 @@ class RandomWalker:
                                   for nbr in G.neighbors(node)]
             norm_const = sum(unnormalized_probs)
             normalized_probs = [
-                float(u_prob)/norm_const for u_prob in unnormalized_probs]
-            alias_nodes[node] = create_alias_table(normalized_probs)
+                float(u_prob) / norm_const for u_prob in unnormalized_probs]
+            alias_nodes[node] = create_alias_table(normalized_probs)  # 制表保证查询时间为O(1)
 
-        if not self.use_rejection_sampling:
+        if not self.use_rejection_sampling:  # 如果不使用负采样计数优化
             alias_edges = {}
 
             for edge in G.edges():
                 alias_edges[edge] = self.get_alias_edge(edge[0], edge[1])
-                if not G.is_directed():
+                if not G.is_directed():  # 如果图不是有向的
                     alias_edges[(edge[1], edge[0])] = self.get_alias_edge(edge[1], edge[0])
                 self.alias_edges = alias_edges
 
@@ -210,17 +217,18 @@ class BiasedWalker:
 
     def simulate_walks(self, num_walks, walk_length, stay_prob=0.3, workers=1, verbose=0):
 
-        layers_adj = pd.read_pickle(self.temp_path+'layers_adj.pkl')
-        layers_alias = pd.read_pickle(self.temp_path+'layers_alias.pkl')
-        layers_accept = pd.read_pickle(self.temp_path+'layers_accept.pkl')
-        gamma = pd.read_pickle(self.temp_path+'gamma.pkl')
+        layers_adj = pd.read_pickle(self.temp_path + 'layers_adj.pkl')
+        layers_alias = pd.read_pickle(self.temp_path + 'layers_alias.pkl')
+        layers_accept = pd.read_pickle(self.temp_path + 'layers_accept.pkl')
+        gamma = pd.read_pickle(self.temp_path + 'gamma.pkl')
         walks = []
         initialLayer = 0
 
         nodes = self.idx  # list(self.g.nodes())
 
         results = Parallel(n_jobs=workers, verbose=verbose, )(
-            delayed(self._simulate_walks)(nodes, num, walk_length, stay_prob, layers_adj, layers_accept, layers_alias, gamma) for num in
+            delayed(self._simulate_walks)(nodes, num, walk_length, stay_prob, layers_adj, layers_accept, layers_alias,
+                                          gamma) for num in
             partition_num(num_walks, workers))
 
         walks = list(itertools.chain(*results))
@@ -244,7 +252,7 @@ class BiasedWalker:
 
         while len(path) < walk_length:
             r = random.random()
-            if(r < stay_prob):  # same layer
+            if (r < stay_prob):  # same layer
                 v = chooseNeighbor(v, graphs, layers_alias,
                                    layers_accept, layer)
                 path.append(self.idx2node[v])
@@ -257,18 +265,17 @@ class BiasedWalker:
                     print(layer, v)
                     raise ValueError()
 
-                if(r > p_moveup):
-                    if(layer > initialLayer):
+                if (r > p_moveup):
+                    if (layer > initialLayer):
                         layer = layer - 1
                 else:
-                    if((layer + 1) in graphs and v in graphs[layer + 1]):
+                    if ((layer + 1) in graphs and v in graphs[layer + 1]):
                         layer = layer + 1
 
         return path
 
 
 def chooseNeighbor(v, graphs, layers_alias, layers_accept, layer):
-
     v_list = graphs[layer][v]
 
     idx = alias_sample(layers_accept[layer][v], layers_alias[layer][v])
